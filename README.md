@@ -1,36 +1,38 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# HospitalOS Frontend
 
-## Getting Started
+HospitalOS frontend foundation built with Next.js App Router, TypeScript, Tailwind CSS, and shadcn/ui.
 
-First, run the development server:
+## Local development
 
-```bash
+From the repository root:
+
+```powershell
+Copy-Item frontend\.env.example frontend\.env.local
+Set-Location frontend
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The development server runs at http://localhost:3000 and uses `NEXT_PUBLIC_API_URL` for the backend base URL.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The development-only design system showcase is available at http://localhost:3000/design-system. It is isolated from the application route tree and returns not found in production.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Application experience
 
-## Learn More
+- `/` is the public HospitalOS landing page and does not require authentication.
+- `/login` is the authenticated workspace sign-in entry point.
+- `/dashboard` and all module routes require an active session.
+- Sidebar and route access use the effective permissions returned in the active tenant session.
+- Navigation items and module actions remain dependent on backend authorization. Hiding a UI control is not a substitute for backend permission enforcement.
+- The dashboard uses responsive desktop, tablet and mobile layouts, including a drawer-based mobile sidebar.
 
-To learn more about Next.js, take a look at the following resources:
+## Validation
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```powershell
+npm test
+npm run lint
+npm run typecheck
+npm run build
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Only browser-safe `NEXT_PUBLIC_*` values belong in frontend environment files. Backend credentials, database settings, and JWT signing secrets must remain server-side.
