@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiRequest } from "@/lib/api/client";
-import { createBranch, listBranches, updateBranchStatus } from "./management-service";
+import {
+  createBranch,
+  listBranches,
+  listTenantMemberships,
+  selectTenant,
+  updateBranchStatus,
+} from "./management-service";
 
 vi.mock("@/lib/api/client", () => ({
   apiRequest: vi.fn(),
@@ -39,7 +45,7 @@ describe("management service", () => {
     });
   });
 
-  it("uses the backend status mutation contract", async () => {
+  it("uses the backend branch status mutation contract", async () => {
     mockedApiRequest.mockResolvedValue({ data: { branch: { id: "branch-1", isActive: false } } });
 
     await updateBranchStatus("branch-1", false);
@@ -48,6 +54,29 @@ describe("management service", () => {
       method: "PATCH",
       url: "/branches/branch-1/status",
       data: { isActive: false },
+    });
+  });
+
+  it("reads the caller's memberships from the existing tenancy endpoint", async () => {
+    mockedApiRequest.mockResolvedValue({ data: { memberships: [] } });
+
+    await listTenantMemberships();
+
+    expect(mockedApiRequest).toHaveBeenCalledWith({
+      method: "GET",
+      url: "/tenants/memberships",
+    });
+  });
+
+  it("selects a hospital through the server-side session selection", async () => {
+    mockedApiRequest.mockResolvedValue({ data: { tenant: { id: "tenant-1" } } });
+
+    await selectTenant("riverside");
+
+    expect(mockedApiRequest).toHaveBeenCalledWith({
+      method: "POST",
+      url: "/tenants/select",
+      data: { slug: "riverside" },
     });
   });
 });

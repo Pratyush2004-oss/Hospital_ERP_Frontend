@@ -31,16 +31,20 @@ function LoginFormContent() {
   const [showPassword, setShowPassword] = useState(false);
   const form = useForm<LoginValues>({ resolver: zodResolver(loginSchema), defaultValues: { identifier: "", password: "" } });
 
+  const requestedNext = searchParams.get("next");
+  const safeNext =
+    requestedNext?.startsWith("/") && !requestedNext.startsWith("//")
+      ? requestedNext
+      : "/dashboard";
+
   useEffect(() => {
-    if (status === "authenticated") router.replace("/dashboard");
-  }, [router, status]);
+    if (status === "authenticated") router.replace(safeNext);
+  }, [router, safeNext, status]);
 
   const onSubmit = async (values: LoginValues) => {
     try {
       await signIn(values.identifier, values.password);
-      const next = searchParams.get("next");
-      const destination = next?.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
-      router.replace(destination);
+      router.replace(safeNext);
     } catch (error) {
       form.setError("root", { message: getApiErrorMessage(error, "Unable to sign in with those credentials.") });
     }
@@ -72,6 +76,16 @@ function LoginFormContent() {
           Received an invitation?{" "}
           <Link href="/accept-invitation" className="font-medium text-primary hover:underline">
             Accept it
+          </Link>
+        </p>
+        <p>
+          A patient?{" "}
+          <Link href="/register/patient" className="font-medium text-primary hover:underline">
+            Create a patient portal account
+          </Link>{" "}
+          or{" "}
+          <Link href="/login?next=%2Fportal" className="font-medium text-primary hover:underline">
+            open your portal
           </Link>
         </p>
       </div>

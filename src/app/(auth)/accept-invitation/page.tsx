@@ -1,19 +1,21 @@
 import { AuthCard } from "@/components/auth/auth-card";
-import { InvitationUnavailable } from "@/components/auth/invitation-unavailable";
+import { InvitationAcceptance } from "@/components/auth/invitation-acceptance";
 
 export default async function AcceptInvitationPage({
   searchParams,
 }: {
-  searchParams: Promise<{ token?: string }>;
+  searchParams: Promise<{ token?: string | string[] }>;
 }) {
   const params = await searchParams;
+  const token = typeof params.token === "string" ? params.token : null;
 
   return (
     <AuthCard
       title="Accept an invitation"
       description="Join an existing hospital workspace."
+      widthClassName="max-w-xl"
     >
-      <InvitationUnavailable hasToken={Boolean(params.token)} />
+      <InvitationAcceptance token={token} />
     </AuthCard>
   );
 }

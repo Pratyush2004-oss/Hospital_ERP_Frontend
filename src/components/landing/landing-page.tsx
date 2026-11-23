@@ -212,7 +212,7 @@ export function LandingPage() {
       <footer className="border-t">
         <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-8 text-sm sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
           <div className="flex items-center gap-2 font-semibold"><span className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground"><HeartPulse className="size-4" /></span>HospitalOS</div>
-          <nav className="flex flex-wrap gap-x-5 gap-y-2 text-muted-foreground" aria-label="Footer navigation"><a href="#features" className="hover:text-foreground">Features</a><a href="#workflow" className="hover:text-foreground">How it works</a><Link href="/register" className="hover:text-foreground">Create a hospital</Link><Link href="/accept-invitation" className="hover:text-foreground">Accept an invitation</Link><Link href="/login" className="hover:text-foreground">Sign in</Link></nav>
+          <nav className="flex flex-wrap gap-x-5 gap-y-2 text-muted-foreground" aria-label="Footer navigation"><a href="#features" className="hover:text-foreground">Features</a><a href="#workflow" className="hover:text-foreground">How it works</a><Link href="/register" className="hover:text-foreground">Create a hospital</Link><Link href="/accept-invitation" className="hover:text-foreground">Accept an invitation</Link><Link href="/register/patient" className="hover:text-foreground">Patient portal</Link><Link href="/login" className="hover:text-foreground">Sign in</Link></nav>
         </div>
       </footer>
     </div>

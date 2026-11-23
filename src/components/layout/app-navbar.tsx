@@ -3,14 +3,15 @@
 import Link from "next/link";
 import { Bell, CircleHelp, Menu, Moon, Search, Sun, UserRound } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
+import { featureFlags } from "@/config/features";
 import { getApiErrorMessage } from "@/lib/auth/auth-service";
+import { getUnreadNotificationCount } from "@/lib/api/notification-service";
 import { useAuthStore } from "@/stores/auth-store";
 import { navigationGroups } from "./navigation";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
@@ -19,7 +20,16 @@ import { AppSidebar } from "./app-sidebar";
 export function AppNavbar({ onToggleSidebar, mobileOpen, onMobileOpenChange }: { onToggleSidebar: () => void; mobileOpen: boolean; onMobileOpenChange: (open: boolean) => void }) {
   const pathname = usePathname();
   const { resolvedTheme, setTheme } = useTheme();
-  const [search, setSearch] = useState("");
+  const tenantId = useAuthStore((state) => state.session?.activeTenant?.id);
+  const unread = useQuery({
+    queryKey: ["notifications", "unread"],
+    queryFn: getUnreadNotificationCount,
+    enabled: featureFlags.notifications && Boolean(tenantId),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    retry: false,
+  });
+  const unreadCount = unread.data ?? 0;
   const currentLabel = navigationGroups.flatMap((group) => group.items).find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))?.label ?? "Dashboard";
 
   return (
@@ -33,13 +43,47 @@ export function AppNavbar({ onToggleSidebar, mobileOpen, onMobileOpenChange }: {
           <span className="truncate font-medium">{currentLabel}</span>
         </nav>
         <div className="ml-auto flex items-center gap-1 sm:gap-2">
-          <div className="relative hidden w-48 lg:block">
-            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-            <Input value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") toast.info(search ? `Search is a visual placeholder for “${search}”.` : "Enter a search term."); }} placeholder="Search..." className="h-9 pl-8" aria-label="Global search" />
-          </div>
-          <Button variant="ghost" size="icon" onClick={() => toast.info("Global search is a development placeholder.")} aria-label="Search"><Search /></Button>
-          <Link href="/notifications" aria-label="Notifications"><Button variant="ghost" size="icon"><Bell /></Button></Link>
-          <Button variant="ghost" size="icon" onClick={() => toast.info("Support center is a development placeholder.")} aria-label="Help and support"><CircleHelp /></Button>
+          {featureFlags.globalSearch ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              disabled
+              title="Global search is coming soon"
+              aria-label="Global search (coming soon)"
+            >
+              <Search />
+            </Button>
+          ) : null}
+          {featureFlags.notifications ? (
+            <Link
+              href="/notifications"
+              aria-label={
+                unreadCount > 0
+                  ? `Notifications, ${unreadCount} unread`
+                  : "Notifications"
+              }
+            >
+              <Button variant="ghost" size="icon" className="relative">
+                <Bell />
+                {unreadCount > 0 ? (
+                  <span className="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-4 text-primary-foreground">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                ) : null}
+              </Button>
+            </Link>
+          ) : null}
+          {featureFlags.helpCenter ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              disabled
+              title="Help and support is coming soon"
+              aria-label="Help and support (coming soon)"
+            >
+              <CircleHelp />
+            </Button>
+          ) : null}
           <UserMenu resolvedTheme={resolvedTheme} setTheme={setTheme} />
         </div>
       </header>

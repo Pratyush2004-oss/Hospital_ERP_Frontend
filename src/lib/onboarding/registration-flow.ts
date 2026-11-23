@@ -90,6 +90,20 @@ export async function submitHospitalRegistration(
   }
 }
 
+export function getApiErrorStatus(error: unknown): number | undefined {
+  if (typeof error === "object" && error !== null && "response" in error) {
+    const status = (error as { response?: { status?: unknown } }).response?.status;
+    return typeof status === "number" ? status : undefined;
+  }
+
+  return undefined;
+}
+
+/** Shared destination after a successful hospital submission. */
+export function onboardingStatusPath(options?: { submitted?: boolean }): string {
+  return options?.submitted ? "/onboarding/status?submitted=1" : "/onboarding/status";
+}
+
 export type RegisterIntent = "hospital" | "invitation";
 
 /** `?intent=invitation` deep-links to the invitation panel. */
@@ -97,17 +111,12 @@ export function getRegisterIntent(value: string | null | undefined): RegisterInt
   return value === "invitation" ? "invitation" : "hospital";
 }
 
-/**
- * Invitation acceptance is intentionally not implemented in ONB-01.
- *
- * The backend has no invitation table, token, acceptance endpoint, or mail
- * delivery, so the UI must not collect a password or pretend to activate an
- * account. This flag keeps the limitation explicit and testable.
- */
+/** Invitation links are handled by the dedicated acceptance route. */
 export const INVITATION_ACCEPTANCE = {
-  available: false,
+  available: true,
+  path: "/accept-invitation",
   reason:
-    "Staff invitations are not available in this build yet. No invitation token or activation endpoint exists, so there is nothing safe to submit here.",
+    "Invitation links are single-use and expire. Open the link from your invitation email to review the hospital, role and branch access before joining.",
   guidance:
-    "Ask your hospital administrator to have your account created, then sign in. Invitation emails and activation links will be added with the staff invitation feature.",
+    "If your link has expired or was revoked, ask your hospital administrator to resend the invitation.",
 } as const;

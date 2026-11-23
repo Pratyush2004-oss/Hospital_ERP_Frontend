@@ -2,12 +2,11 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import type { ReactNode } from "react";
 import { z } from "zod";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { FormField } from "@/components/shared/form-field";
+import { FormFooter, useUnsavedChanges } from "@/components/shared/form-actions";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import type { Branch, BranchInput, UpdateBranchInput } from "@/types/management";
 
 const branchFormSchema = z.object({
@@ -54,6 +53,7 @@ export function BranchForm({
       timezone: branch?.timezone ?? "UTC",
     },
   });
+  useUnsavedChanges(open && form.formState.isDirty);
   const submit = form.handleSubmit((values) => {
     const input = Object.fromEntries(
       Object.entries(values).filter(([, value]) => value !== ""),
@@ -86,29 +86,26 @@ export function BranchForm({
         <DialogHeader><DialogTitle>{branch ? "Edit branch" : "Create branch"}</DialogTitle><DialogDescription>{branch ? "Update the branch details supported by the hospital API." : "Create a branch for the active hospital tenant."}</DialogDescription></DialogHeader>
         <form onSubmit={submit} className="grid gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Branch name" error={form.formState.errors.name?.message}><Input {...form.register("name")} /></Field>
-            <Field label="Branch code" error={form.formState.errors.branchCode?.message}><Input disabled={Boolean(branch)} {...form.register("branchCode")} /></Field>
+            <FormField id="branch-name" label="Branch name" required error={form.formState.errors.name?.message}><Input {...form.register("name")} /></FormField>
+            <FormField id="branch-code" label="Branch code" required description="Letters, numbers and hyphens. The code is fixed after creation." error={form.formState.errors.branchCode?.message}><Input disabled={Boolean(branch)} {...form.register("branchCode")} /></FormField>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Contact email" error={form.formState.errors.contactEmail?.message}><Input type="email" {...form.register("contactEmail")} /></Field>
-            <Field label="Contact phone" error={form.formState.errors.contactPhone?.message}><Input {...form.register("contactPhone")} /></Field>
+            <FormField id="branch-email" label="Contact email" error={form.formState.errors.contactEmail?.message}><Input type="email" autoComplete="email" {...form.register("contactEmail")} /></FormField>
+            <FormField id="branch-phone" label="Contact phone" error={form.formState.errors.contactPhone?.message}><Input type="tel" autoComplete="tel" {...form.register("contactPhone")} /></FormField>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Address line 1" error={form.formState.errors.addressLine1?.message}><Input {...form.register("addressLine1")} /></Field>
-            <Field label="Address line 2" error={form.formState.errors.addressLine2?.message}><Input {...form.register("addressLine2")} /></Field>
-            <Field label="City" error={form.formState.errors.city?.message}><Input {...form.register("city")} /></Field>
-            <Field label="State" error={form.formState.errors.state?.message}><Input {...form.register("state")} /></Field>
-            <Field label="Postal code" error={form.formState.errors.postalCode?.message}><Input {...form.register("postalCode")} /></Field>
-            <Field label="Country code" error={form.formState.errors.country?.message}><Input maxLength={2} {...form.register("country")} /></Field>
+            <FormField id="branch-address-1" label="Address line 1" error={form.formState.errors.addressLine1?.message}><Input autoComplete="address-line1" {...form.register("addressLine1")} /></FormField>
+            <FormField id="branch-address-2" label="Address line 2" error={form.formState.errors.addressLine2?.message}><Input autoComplete="address-line2" {...form.register("addressLine2")} /></FormField>
+            <FormField id="branch-city" label="City" error={form.formState.errors.city?.message}><Input autoComplete="address-level2" {...form.register("city")} /></FormField>
+            <FormField id="branch-state" label="State" error={form.formState.errors.state?.message}><Input autoComplete="address-level1" {...form.register("state")} /></FormField>
+            <FormField id="branch-postal" label="Postal code" error={form.formState.errors.postalCode?.message}><Input autoComplete="postal-code" {...form.register("postalCode")} /></FormField>
+            <FormField id="branch-country" label="Country code" description="Two-letter ISO country code." error={form.formState.errors.country?.message}><Input maxLength={2} autoComplete="country" {...form.register("country")} /></FormField>
           </div>
-          <Field label="Timezone" error={form.formState.errors.timezone?.message}><Input {...form.register("timezone")} /></Field>
-          <DialogFooter><Button type="submit" disabled={isPending}>{isPending ? "Saving..." : branch ? "Save changes" : "Create branch"}</Button></DialogFooter>
+          <FormField id="branch-timezone" label="Timezone" required description="IANA timezone used for schedules and appointment times." error={form.formState.errors.timezone?.message}><Input autoComplete="off" {...form.register("timezone")} /></FormField>
+          <FormFooter isPending={isPending} onCancel={() => onOpenChange(false)} submitLabel={branch ? "Save changes" : "Create branch"} />
         </form>
       </DialogContent>
     </Dialog>
   );
 }
 
-function Field({ label, error, children }: { label: string; error?: string; children: ReactNode }) {
-  return <div className="grid gap-2"><Label>{label}</Label>{children}{error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}</div>;
-}

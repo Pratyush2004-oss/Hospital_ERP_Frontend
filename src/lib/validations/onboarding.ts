@@ -97,8 +97,21 @@ export const hospitalRegistrationSchema = z.object({
     .max(64, "Timezone must be at most 64 characters"),
 });
 
+/**
+ * Hospital registration plus the regional preferences shown in the guided
+ * wizard. Country, locale and language are review context only: the current
+ * `POST /tenants/register` contract persists the timezone, but has no fields
+ * for the other regional values, so they are never sent as hidden payload.
+ */
+export const hospitalProfileSchema = hospitalRegistrationSchema.extend({
+  country: z.string().trim().regex(/^[A-Z]{2}$/, "Choose a country"),
+  locale: z.string().trim().min(2, "Choose a locale").max(35, "Locale is too long"),
+  language: z.string().trim().regex(/^[a-z]{2,3}$/, "Choose a language"),
+});
+
 export type RegistrationAccountValues = z.infer<typeof registrationAccountSchema>;
 export type HospitalRegistrationValues = z.infer<typeof hospitalRegistrationSchema>;
+export type HospitalProfileValues = z.infer<typeof hospitalProfileSchema>;
 
 /** Omits blank optional fields so the backend receives only supplied values. */
 export function toHospitalRegistrationPayload(

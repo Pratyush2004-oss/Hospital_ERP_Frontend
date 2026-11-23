@@ -9,6 +9,8 @@ export type TenantMembership = {
   status: string;
   joinedAt: string | null;
   createdAt: string;
+  /** Backend-computed: true only when the hospital and membership are ACTIVE. */
+  selectable?: boolean;
 };
 
 export type TenantSummary = {
@@ -21,6 +23,33 @@ export type TenantSummary = {
   status: TenantStatus;
   timezone: string;
   createdAt: string;
+};
+
+export type TenantOnboardingRegistration = {
+  tenantId: string;
+  tenantName: string;
+  tenantSlug: string;
+  registrationReference: string;
+  status: TenantStatus;
+  submittedAt: string;
+  legalName: string | null;
+  email: string | null;
+  phone: string | null;
+  timezone: string;
+  membershipId: string;
+  membershipStatus: string;
+  joinedAt: string | null;
+  selectable: boolean;
+};
+
+export type TenantOnboardingStatus = {
+  registrations: TenantOnboardingRegistration[];
+  supportEmail: string | null;
+};
+
+export type SlugAvailability = {
+  slug: string;
+  available: boolean;
 };
 
 export type RegisterTenantInput = {
@@ -97,8 +126,31 @@ export type TenantStaffMember = {
     phone: string | null;
     status: string;
     joinedAt: string | null;
+    updatedAt?: string;
+    branchIds: string[];
+    departmentIds: string[];
     roles: { id: string; slug: string; name: string }[];
   };
+
+export type StaffInvitationStatus = "INVITED" | "ACCEPTED" | "REVOKED" | "EXPIRED";
+
+export type StaffInvitation = {
+    id: string;
+    email: string;
+    fullName: string | null;
+    status: StaffInvitationStatus;
+    createdAt: string;
+    expiresAt: string;
+    membershipId: string | null;
+    membershipStatus: string | null;
+    invitedByName: string | null;
+    roleIds: string[];
+    departmentIds: string[];
+    branchIds: string[];
+    roles: { id: string; slug: string; name: string }[];
+    departments: { id: string; name: string }[];
+    branches: { id: string; name: string }[];
+};
 
 export type DepartmentBranchSummary = Pick<Branch, "id" | "name" | "branchCode" | "isActive">;
 

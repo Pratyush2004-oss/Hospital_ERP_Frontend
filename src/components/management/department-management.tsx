@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LegacyColumnDef as ColumnDef } from "@tanstack/react-table/legacy";
 import { Eye, Pencil, Plus, Power, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -13,17 +13,20 @@ import { getApiErrorMessage } from "@/lib/auth/auth-service";
 import { createDepartment, deleteDepartment, listDepartments, updateDepartment, updateDepartmentBranches, updateDepartmentStatus } from "@/lib/api/department-doctor-service";
 import { listBranches } from "@/lib/api/management-service";
 import { EMPTY_PERMISSIONS, useAuthStore } from "@/stores/auth-store";
+import { ALL_BRANCHES, useBranchContextStore } from "@/stores/branch-context-store";
 import type { Department, DepartmentInput } from "@/types/management";
+import { Combobox } from "@/components/shared/combobox";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { FormField } from "@/components/shared/form-field";
+import { FormFooter, useUnsavedChanges } from "@/components/shared/form-actions";
 import { DataTable } from "@/components/shared/data-table";
 import { PageContainer } from "@/components/shared/page-container";
 import { PageHeader } from "@/components/shared/page-header";
 import { ErrorState, LoadingState } from "@/components/shared/states";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 const schema = z.object({
@@ -39,12 +42,14 @@ export function DepartmentManagement() {
   const canCreate = permissions.includes("department:create");
   const canUpdate = permissions.includes("department:update");
   const canDelete = permissions.includes("department:delete");
+  const selectedBranchId = useBranchContextStore((state) => state.selectedBranchId);
+  const branchFilter = selectedBranchId === ALL_BRANCHES ? undefined : selectedBranchId;
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<Department | null>(null);
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
-  const departments = useQuery({ queryKey: ["departments", { search, page }], enabled: canRead, queryFn: () => listDepartments({ page, limit: 10, search }) });
+  const departments = useQuery({ queryKey: ["departments", { search, page, branchFilter }], enabled: canRead, queryFn: () => listDepartments({ page, limit: 10, search, branchId: branchFilter }) });
   const branches = useQuery({ queryKey: ["branches", "assignment-options"], enabled: canRead, queryFn: () => listBranches({ page: 1, pageSize: 100 }) });
   const save = useMutation({
     mutationFn: async (input: DepartmentInput) => {
@@ -76,7 +81,7 @@ export function DepartmentManagement() {
     }},
   ];
   return <PageContainer>
-    <PageHeader eyebrow="Hospital operations" title="Departments" description="Manage departments and their branch coverage." actions={canCreate ? <Button onClick={() => { setEditing(null); setOpen(true); }}><Plus className="size-4" />Create department</Button> : null} />
+    <PageHeader eyebrow="Hospital operations" title="Departments" description={branchFilter ? "Departments covering the selected branch. The sidebar selection is a filter, not an authorization boundary." : "Manage departments and their branch coverage across all visible branches."} actions={canCreate ? <Button onClick={() => { setEditing(null); setOpen(true); }}><Plus className="size-4" />Create department</Button> : null} />
     <div className="mt-6"><Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search department name or slug..." className="sm:max-w-sm" /></div>
     <div className="mt-4">{departments.isLoading ? <LoadingState label="Loading departments..." /> : null}{departments.isError ? <ErrorState onRetry={() => void departments.refetch()} /> : null}{departments.data ? <DataTable columns={columns} data={departments.data.departments} emptyMessage="No departments match the current filters." /> : null}{departments.data ? <Pager page={page} totalPages={departments.data.pagination.totalPages} total={departments.data.pagination.total} setPage={setPage} /> : null}</div>
     <DepartmentForm key={editing?.id ?? "new"} department={editing} branches={branches.data?.branches ?? []} open={open} onOpenChange={setOpen} onSubmit={(input) => save.mutate(input)} isPending={save.isPending} />
@@ -85,10 +90,10 @@ export function DepartmentManagement() {
 
 function DepartmentForm({ department, branches, open, onOpenChange, onSubmit, isPending }: { department: Department | null; branches: { id: string; name: string; branchCode: string }[]; open: boolean; onOpenChange: (open: boolean) => void; onSubmit: (input: DepartmentInput) => void; isPending: boolean }) {
   const form = useForm<Values>({ resolver: zodResolver(schema), values: { name: department?.name ?? "", slug: department?.slug ?? "", description: department?.description ?? "" } });
+  const initialBranchIds = department?.branches.map((branch) => branch.id).join(",") ?? "";
   const [branchIds, setBranchIds] = useState<string[]>(department?.branches.map((branch) => branch.id) ?? []);
+  useUnsavedChanges(open && (form.formState.isDirty || branchIds.join(",") !== initialBranchIds));
   const submit = form.handleSubmit((values) => onSubmit({ ...values, description: values.description || null, branchIds }));
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>{department ? "Edit department" : "Create department"}</DialogTitle><DialogDescription>Branch assignments replace the complete current association set.</DialogDescription></DialogHeader><form onSubmit={submit} className="grid gap-4"><Field label="Name" error={form.formState.errors.name?.message}><Input {...form.register("name")} /></Field><Field label="Slug" error={form.formState.errors.slug?.message}><Input {...form.register("slug")} placeholder="outpatient-care" /></Field><Field label="Description" error={form.formState.errors.description?.message}><Textarea {...form.register("description")} /></Field><div className="grid gap-2"><Label>Branches</Label><select multiple value={branchIds} onChange={(event) => setBranchIds(Array.from(event.target.selectedOptions, (option) => option.value))} className="min-h-28 rounded-lg border bg-background p-2 text-sm">{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name} ({branch.branchCode})</option>)}</select></div><DialogFooter><Button type="submit" disabled={isPending}>{isPending ? "Saving..." : "Save department"}</Button></DialogFooter></form></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto"><DialogHeader><DialogTitle>{department ? "Edit department" : "Create department"}</DialogTitle><DialogDescription>Branch assignments replace the complete current association set.</DialogDescription></DialogHeader><form onSubmit={submit} className="grid gap-4"><FormField id="department-name" label="Name" required error={form.formState.errors.name?.message}><Input {...form.register("name")} /></FormField><FormField id="department-slug" label="Slug" description="Stable URL identifier. Leave blank to let the backend derive it from the name." error={form.formState.errors.slug?.message}><Input {...form.register("slug")} placeholder="outpatient-care" /></FormField><FormField id="department-description" label="Description" error={form.formState.errors.description?.message}><Textarea {...form.register("description")} rows={3} /></FormField><FormField id="department-branches" label="Branches" description="Search and select every branch this department covers."><Combobox id="department-branches" multiple options={branches.map((branch) => ({ value: branch.id, label: branch.name, description: branch.branchCode }))} value={branchIds} onValueChange={(value) => setBranchIds(Array.isArray(value) ? value : [value])} placeholder="Select branches" searchPlaceholder="Search branches..." emptyMessage="No branches found." /></FormField><FormFooter isPending={isPending} onCancel={() => onOpenChange(false)} submitLabel="Save department" /></form></DialogContent></Dialog>;
 }
-
-function Field({ label, error, children }: { label: string; error?: string; children: ReactNode }) { return <div className="grid gap-2"><Label>{label}</Label>{children}{error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}</div>; }
 function Pager({ page, totalPages, total, setPage }: { page: number; totalPages: number; total: number; setPage: (page: number) => void }) { return <div className="mt-3 flex items-center justify-between text-sm text-muted-foreground"><span>{total} total departments</span><div className="flex gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button><span className="px-2 py-1">Page {page} of {Math.max(totalPages, 1)}</span><Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>Next</Button></div></div>; }

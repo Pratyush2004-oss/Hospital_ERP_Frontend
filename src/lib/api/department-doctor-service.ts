@@ -6,15 +6,9 @@ import type {
   DoctorBranchAssignment,
   DoctorInput,
   DoctorUpdateInput,
-  TenantStaffMember,
 } from "@/types/management";
 
 type Pagination = { page: number; pageSize: number; total: number; totalPages: number };
-
-export async function listTenantStaff(): Promise<TenantStaffMember[]> {
-  const response = await apiRequest<{ memberships: TenantStaffMember[] }>({ method: "GET", url: "/tenant/memberships" });
-  return response.data.memberships;
-}
 
 export async function listDepartments(query: { page: number; limit: number; search?: string; isActive?: boolean; branchId?: string }) {
   const response = await apiRequest<{ departments: Department[] }>({

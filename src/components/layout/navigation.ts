@@ -8,6 +8,7 @@ import {
   Settings,
   ShieldCheck,
   Stethoscope,
+  UserCog,
   Users,
   Workflow,
 } from "lucide-react";
@@ -17,7 +18,6 @@ export type NavigationItem = {
   label: string;
   href: string;
   icon: LucideIcon;
-  placeholder?: boolean;
   requiredPermissions?: readonly string[];
   anyPermission?: readonly string[];
 };
@@ -49,11 +49,33 @@ export function getVisibleNavigationGroups(
     .filter((group) => group.items.length > 0);
 }
 
+/**
+ * Direct-navigation guard. Hiding a menu item is not authorization: deep links
+ * must be rejected with the same permission rules used by the sidebar.
+ * Scheduling and any other `anyOf` module use at least one matching permission.
+ */
+export function canAccessRoute(
+  pathname: string,
+  permissions: readonly string[],
+): boolean {
+  const matchedRoute = Object.keys(routePermissionRequirements).find(
+    (route) => pathname === route || pathname.startsWith(`${route}/`),
+  );
+  if (!matchedRoute) return true;
+
+  const requirements = routePermissionRequirements[matchedRoute];
+  if (matchedRoute === "/scheduling") {
+    return requirements.some((permission) => permissions.includes(permission));
+  }
+  return requirements.every((permission) => permissions.includes(permission));
+}
+
 export const routePermissionRequirements: Readonly<Record<string, readonly string[]>> = {
   "/hospitals": ["tenant:read"],
   "/branches": ["branch:read"],
   "/departments": ["department:read"],
   "/doctors": ["doctor:read"],
+  "/staff": ["staff:read"],
   "/patients": ["patient:read"],
   "/appointments": ["appointment:read"],
   "/scheduling": ["schedule.read", "doctor.leave.read", "schedule.break.read"],
@@ -74,6 +96,7 @@ export const navigationGroups: NavigationGroup[] = [
       { label: "Branches", href: "/branches", icon: Workflow, requiredPermissions: ["branch:read"] },
       { label: "Departments", href: "/departments", icon: ClipboardList, requiredPermissions: ["department:read"] },
       { label: "Doctors", href: "/doctors", icon: Stethoscope, requiredPermissions: ["doctor:read"] },
+      { label: "Staff", href: "/staff", icon: UserCog, requiredPermissions: ["staff:read"] },
     ],
   },
   {

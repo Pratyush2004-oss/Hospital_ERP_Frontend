@@ -5,26 +5,30 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LegacyColumnDef as ColumnDef } from "@tanstack/react-table/legacy";
 import { Eye, Pencil, Plus, Power, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
-import { useForm } from "react-hook-form";
+import { useState } from "react";
+import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { getApiErrorMessage } from "@/lib/auth/auth-service";
 import { listBranches } from "@/lib/api/management-service";
-import { createDoctor, deleteDoctor, listDoctors, listTenantStaff, updateDoctor, updateDoctorBranches, updateDoctorDepartments, updateDoctorStatus } from "@/lib/api/department-doctor-service";
+import { createDoctor, deleteDoctor, listDoctors, updateDoctor, updateDoctorBranches, updateDoctorDepartments, updateDoctorStatus } from "@/lib/api/department-doctor-service";
 import { listDepartments } from "@/lib/api/department-doctor-service";
+import { listTenantStaff } from "@/lib/api/staff-service";
 import { EMPTY_PERMISSIONS, useAuthStore } from "@/stores/auth-store";
+import { ALL_BRANCHES, useBranchContextStore } from "@/stores/branch-context-store";
 import type { Doctor, DoctorBranchAssignment, DoctorInput, DoctorUpdateInput } from "@/types/management";
+import { Combobox } from "@/components/shared/combobox";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { FormField } from "@/components/shared/form-field";
+import { FormFooter, useUnsavedChanges } from "@/components/shared/form-actions";
 import { DataTable } from "@/components/shared/data-table";
 import { PageContainer } from "@/components/shared/page-container";
 import { PageHeader } from "@/components/shared/page-header";
 import { ErrorState, LoadingState } from "@/components/shared/states";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
 const schema = z.object({
@@ -48,12 +52,14 @@ export function DoctorManagement() {
   const canCreate = permissions.includes("doctor:create");
   const canUpdate = permissions.includes("doctor:update");
   const canDelete = permissions.includes("doctor:delete");
+  const selectedBranchId = useBranchContextStore((state) => state.selectedBranchId);
+  const branchFilter = selectedBranchId === ALL_BRANCHES ? undefined : selectedBranchId;
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<Doctor | null>(null);
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
-  const doctors = useQuery({ queryKey: ["doctors", { search, page }], enabled: canRead, queryFn: () => listDoctors({ page, limit: 10, search }) });
+  const doctors = useQuery({ queryKey: ["doctors", { search, page, branchFilter }], enabled: canRead, queryFn: () => listDoctors({ page, limit: 10, search, branchId: branchFilter }) });
   const branches = useQuery({ queryKey: ["branches", "assignment-options"], enabled: canRead, queryFn: () => listBranches({ page: 1, pageSize: 100 }) });
   const departments = useQuery({ queryKey: ["departments", "assignment-options"], enabled: canRead, queryFn: () => listDepartments({ page: 1, limit: 100 }) });
   const staff = useQuery({ queryKey: ["tenant-staff"], enabled: canCreate, queryFn: listTenantStaff });
@@ -90,7 +96,10 @@ export function DoctorManagement() {
 function DoctorForm({ doctor, staff, departments, branches, open, onOpenChange, onSubmit, isPending }: { doctor: Doctor | null; staff: { userId: string; fullName: string; email: string }[]; departments: { id: string; name: string }[]; branches: { id: string; name: string; branchCode: string }[]; open: boolean; onOpenChange: (open: boolean) => void; onSubmit: (value: { profile: DoctorInput | DoctorUpdateInput; departmentIds: string[]; branchAssignments: Assignment[] }) => void; isPending: boolean }) {
   const form = useForm<Values>({ resolver: zodResolver(schema), values: { userId: doctor?.userId ?? "", doctorCode: doctor?.doctorCode ?? "", registrationNumber: doctor?.registrationNumber ?? "", registrationCouncil: doctor?.registrationCouncil ?? "", qualification: doctor?.qualification ?? "", specialization: doctor?.specialization ?? "", experienceYears: doctor?.experienceYears === null || doctor?.experienceYears === undefined ? "" : String(doctor.experienceYears), biography: doctor?.biography ?? "", profileImageUrl: doctor?.profileImageUrl ?? "", consultationLanguage: doctor?.consultationLanguage?.join(", ") ?? "" } });
   const [departmentIds, setDepartmentIds] = useState<string[]>(doctor?.departments.map((item) => item.id) ?? []);
+  const initialDepartmentIds = (doctor?.departments.map((item) => item.id) ?? []).join(",");
+  const initialAssignments = JSON.stringify(doctor?.branches.map((item) => ({ branchId: item.branchId, consultationFee: item.consultationFee, currency: item.currency, isActive: item.isActive })) ?? []);
   const [assignments, setAssignments] = useState<Assignment[]>(doctor?.branches.map((item) => ({ branchId: item.branchId, consultationFee: item.consultationFee, currency: item.currency, isActive: item.isActive })) ?? []);
+  useUnsavedChanges(open && (form.formState.isDirty || departmentIds.join(",") !== initialDepartmentIds || JSON.stringify(assignments) !== initialAssignments));
   const submit = form.handleSubmit((values) => {
     const common = { doctorCode: values.doctorCode, registrationNumber: values.registrationNumber, experienceYears: values.experienceYears === "" ? null : Number(values.experienceYears), consultationLanguage: values.consultationLanguage ? values.consultationLanguage.split(",").map((item: string) => item.trim()).filter(Boolean) : null, registrationCouncil: values.registrationCouncil || null, qualification: values.qualification || null, specialization: values.specialization || null, biography: values.biography || null, profileImageUrl: values.profileImageUrl || null };
     if (doctor) {
@@ -103,12 +112,14 @@ function DoctorForm({ doctor, staff, departments, branches, open, onOpenChange, 
   });
   const toggleBranch = (branchId: string, checked: boolean) => setAssignments((current) => checked ? [...current, { branchId, consultationFee: "0.00", currency: "USD", isActive: true }] : current.filter((item) => item.branchId !== branchId));
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto"><DialogHeader><DialogTitle>{doctor ? "Edit doctor" : "Add doctor"}</DialogTitle><DialogDescription>Doctor profiles link to existing active hospital members. Branch fees are stored as decimal values by the backend.</DialogDescription></DialogHeader><form onSubmit={submit} className="grid gap-4">
-    <Field label="Existing tenant member" error={form.formState.errors.userId?.message}><select disabled={Boolean(doctor)} {...form.register("userId")} className="h-9 rounded-lg border bg-background px-3 text-sm"><option value="">Select a member</option>{staff.map((member) => <option key={member.userId} value={member.userId}>{member.fullName} — {member.email}</option>)}</select></Field>
-    <div className="grid gap-4 sm:grid-cols-2"><Field label="Doctor code" error={form.formState.errors.doctorCode?.message}><Input {...form.register("doctorCode")} /></Field><Field label="Registration number" error={form.formState.errors.registrationNumber?.message}><Input {...form.register("registrationNumber")} /></Field><Field label="Registration council" error={form.formState.errors.registrationCouncil?.message}><Input {...form.register("registrationCouncil")} /></Field><Field label="Qualification" error={form.formState.errors.qualification?.message}><Input {...form.register("qualification")} /></Field><Field label="Specialization" error={form.formState.errors.specialization?.message}><Input {...form.register("specialization")} /></Field><Field label="Experience years" error={form.formState.errors.experienceYears?.message}><Input type="number" {...form.register("experienceYears")} /></Field></div>
-    <Field label="Biography" error={form.formState.errors.biography?.message}><Textarea {...form.register("biography")} /></Field><Field label="Profile image URL" error={form.formState.errors.profileImageUrl?.message}><Input {...form.register("profileImageUrl")} /></Field><Field label="Consultation languages" error={form.formState.errors.consultationLanguage?.message}><Input {...form.register("consultationLanguage")} placeholder="en, hi" /></Field>
-    <MultiSelect label="Departments" values={departmentIds} options={departments} onChange={setDepartmentIds} /><div className="grid gap-2"><Label>Branches and consultation fees</Label>{branches.map((branch) => { const assignment = assignments.find((item) => item.branchId === branch.id); return <div key={branch.id} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_120px_90px] sm:items-center"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(assignment)} onChange={(event) => toggleBranch(branch.id, event.target.checked)} />{branch.name} ({branch.branchCode})</label>{assignment ? <Input aria-label={`${branch.name} consultation fee`} value={assignment.consultationFee} onChange={(event) => setAssignments((current) => current.map((item) => item.branchId === branch.id ? { ...item, consultationFee: event.target.value } : item))} placeholder="0.00" /> : <span className="text-xs text-muted-foreground">Not assigned</span>}{assignment ? <Input aria-label={`${branch.name} currency`} value={assignment.currency} maxLength={3} onChange={(event) => setAssignments((current) => current.map((item) => item.branchId === branch.id ? { ...item, currency: event.target.value.toUpperCase() } : item))} /> : null}</div>; })}</div>
-    <DialogFooter><Button type="submit" disabled={isPending}>{isPending ? "Saving..." : doctor ? "Save doctor" : "Create doctor"}</Button></DialogFooter></form></DialogContent></Dialog>;
+    <Controller control={form.control} name="userId" render={({ field }) => (
+      <FormField id="doctor-member" label="Existing tenant member" required description="Only active hospital members can be linked to a doctor profile." error={form.formState.errors.userId?.message}>
+        <Combobox id="doctor-member" options={staff.map((member) => ({ value: member.userId, label: member.fullName, description: member.email }))} value={field.value} onValueChange={(value) => field.onChange(String(value))} placeholder="Select a member" searchPlaceholder="Search staff by name or email..." emptyMessage="No active staff members found." disabled={Boolean(doctor)} />
+      </FormField>
+    )} />
+    <div className="grid gap-4 sm:grid-cols-2"><FormField id="doctor-code" label="Doctor code" required error={form.formState.errors.doctorCode?.message}><Input {...form.register("doctorCode")} /></FormField><FormField id="doctor-registration" label="Registration number" required error={form.formState.errors.registrationNumber?.message}><Input {...form.register("registrationNumber")} /></FormField><FormField id="doctor-council" label="Registration council" error={form.formState.errors.registrationCouncil?.message}><Input {...form.register("registrationCouncil")} /></FormField><FormField id="doctor-qualification" label="Qualification" error={form.formState.errors.qualification?.message}><Input {...form.register("qualification")} /></FormField><FormField id="doctor-specialization" label="Specialization" error={form.formState.errors.specialization?.message}><Input {...form.register("specialization")} /></FormField><FormField id="doctor-experience" label="Experience years" description="Whole years from 0 to 70." error={form.formState.errors.experienceYears?.message}><Input type="number" inputMode="numeric" {...form.register("experienceYears")} /></FormField></div>
+    <FormField id="doctor-biography" label="Biography" error={form.formState.errors.biography?.message}><Textarea {...form.register("biography")} rows={3} /></FormField><FormField id="doctor-image" label="Profile image URL" error={form.formState.errors.profileImageUrl?.message}><Input type="url" {...form.register("profileImageUrl")} /></FormField><FormField id="doctor-languages" label="Consultation languages" description="Separate languages with commas, for example en, hi." error={form.formState.errors.consultationLanguage?.message}><Input {...form.register("consultationLanguage")} placeholder="en, hi" /></FormField>
+    <FormField id="doctor-departments" label="Departments" description="Search and select every department this doctor covers."><Combobox id="doctor-departments" multiple options={departments.map((department) => ({ value: department.id, label: department.name }))} value={departmentIds} onValueChange={(value) => setDepartmentIds(Array.isArray(value) ? value : [value])} placeholder="Select departments" searchPlaceholder="Search departments..." emptyMessage="No departments found." /></FormField>
+    <fieldset className="grid gap-2"><legend className="text-sm font-medium">Branches and consultation fees</legend><p className="text-xs text-muted-foreground">Check each branch where the doctor practises, then set the fee used for that branch.</p>{branches.map((branch) => { const assignment = assignments.find((item) => item.branchId === branch.id); return <div key={branch.id} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_120px_90px] sm:items-center"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(assignment)} onChange={(event) => toggleBranch(branch.id, event.target.checked)} />{branch.name} ({branch.branchCode})</label>{assignment ? <Input aria-label={`${branch.name} consultation fee`} value={assignment.consultationFee} onChange={(event) => setAssignments((current) => current.map((item) => item.branchId === branch.id ? { ...item, consultationFee: event.target.value } : item))} placeholder="0.00" /> : <span className="text-xs text-muted-foreground">Not assigned</span>}{assignment ? <Input aria-label={`${branch.name} currency`} value={assignment.currency} maxLength={3} onChange={(event) => setAssignments((current) => current.map((item) => item.branchId === branch.id ? { ...item, currency: event.target.value.toUpperCase() } : item))} /> : null}</div>; })}</fieldset>
+    <FormFooter isPending={isPending} onCancel={() => onOpenChange(false)} submitLabel={doctor ? "Save doctor" : "Create doctor"} /></form></DialogContent></Dialog>;
 }
-
-function MultiSelect<T extends { id: string; name: string }>({ label, values, options, onChange }: { label: string; values: string[]; options: T[]; onChange: (values: string[]) => void }) { return <div className="grid gap-2"><Label>{label}</Label><select multiple value={values} onChange={(event) => onChange(Array.from(event.target.selectedOptions, (option) => option.value))} className="min-h-28 rounded-lg border bg-background p-2 text-sm">{options.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select></div>; }
-function Field({ label, error, children }: { label: string; error?: string; children: ReactNode }) { return <div className="grid gap-2"><Label>{label}</Label>{children}{error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}</div>; }

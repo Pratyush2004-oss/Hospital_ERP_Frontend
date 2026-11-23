@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiRequest } from "@/lib/api/client";
-import { changePassword, getApiErrorMessage, getCurrentUser, listSessions, login, logout, registerAccount } from "./auth-service";
+import { acceptInvitation, changePassword, getApiErrorMessage, getCurrentUser, getInvitationDetails, listSessions, login, logout, registerAccount, revokeSession } from "./auth-service";
 
 vi.mock("@/lib/api/client", () => ({
   apiRequest: vi.fn(),
@@ -110,6 +110,33 @@ describe("auth service", () => {
     expect(mockedApiRequest).toHaveBeenCalledWith({ method: "POST", url: "/auth/logout" });
   });
 
+  it("uses the backend session isCurrent flag and revocation endpoint", async () => {
+    mockedApiRequest.mockResolvedValueOnce({
+      data: {
+        sessions: [
+          {
+            id: "session-1",
+            userAgent: "Browser",
+            ipAddress: "127.0.0.1",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            lastUsedAt: "2026-01-01T00:00:00.000Z",
+            expiresAt: "2026-02-01T00:00:00.000Z",
+            isCurrent: true,
+          },
+        ],
+      },
+    }).mockResolvedValueOnce({ data: undefined });
+
+    const sessions = await listSessions();
+    expect(sessions[0]?.isCurrent).toBe(true);
+
+    await revokeSession("session-2");
+    expect(mockedApiRequest).toHaveBeenLastCalledWith({
+      method: "DELETE",
+      url: "/auth/sessions/session-2",
+    });
+  });
+
   it("extracts standardized backend error messages", () => {
     expect(getApiErrorMessage({ response: { data: { error: { message: "Invalid email, phone number or password" } } } })).toBe("Invalid email, phone number or password");
   });
@@ -120,5 +147,56 @@ describe("auth service", () => {
     await expect(listSessions()).resolves.toEqual([]);
     expect(mockedApiRequest).toHaveBeenNthCalledWith(1, { method: "POST", url: "/auth/change-password", data: { currentPassword: "old", newPassword: "new" } });
     expect(mockedApiRequest).toHaveBeenNthCalledWith(2, { method: "GET", url: "/auth/sessions" });
+  });
+
+  it("inspects an invitation without revealing the raw token", async () => {
+    mockedApiRequest.mockResolvedValue({
+      data: {
+        invitation: {
+          valid: true,
+          status: "INVITED",
+          hospitalName: "Riverside Care",
+          email: "a***@example.test",
+          fullName: "Ada",
+          expiresAt: "2026-12-01T00:00:00.000Z",
+          requiresPassword: false,
+          roles: [{ slug: "doctor", name: "Doctor" }],
+          departments: [],
+          branches: [{ name: "Main Branch" }],
+        },
+      },
+    });
+
+    const invitation = await getInvitationDetails("single-use-token-value");
+
+    expect(invitation.hospitalName).toBe("Riverside Care");
+    expect(invitation.email).toBe("a***@example.test");
+    expect(mockedApiRequest).toHaveBeenCalledWith({
+      method: "POST",
+      url: "/auth/invitations/details",
+      data: { token: "single-use-token-value" },
+    });
+  });
+
+  it("accepts an invitation for a new account and returns the membership", async () => {
+    mockedApiRequest.mockResolvedValue({
+      data: { tenantId: "tenant-1", membershipId: "membership-1", accountCreated: true },
+    });
+
+    const result = await acceptInvitation("single-use-token-value", {
+      fullName: "Ada Lovelace",
+      password: "correct-horse-battery",
+    });
+
+    expect(result.accountCreated).toBe(true);
+    expect(mockedApiRequest).toHaveBeenCalledWith({
+      method: "POST",
+      url: "/auth/invitations/accept",
+      data: {
+        token: "single-use-token-value",
+        fullName: "Ada Lovelace",
+        password: "correct-horse-battery",
+      },
+    });
   });
 });

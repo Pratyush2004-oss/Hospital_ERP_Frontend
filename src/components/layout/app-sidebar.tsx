@@ -7,10 +7,10 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { getVisibleNavigationGroups, navigationGroups, type NavigationGroup } from "./navigation";
 import { EMPTY_PERMISSIONS, useAuthStore } from "@/stores/auth-store";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { featureFlags } from "@/config/features";
 import { TenantContext } from "./tenant-context";
 
 type AppSidebarProps = {
@@ -73,7 +73,7 @@ export function AppSidebar({ collapsed, onCollapsedChange, onNavigate }: AppSide
           <SidebarGroup key={group.label} group={group} collapsed={collapsed} pathname={pathname} onNavigate={onNavigate} open={openGroups[group.label] ?? true} onOpenChange={(open) => setOpenGroups((current) => ({ ...current, [group.label]: open }))} />
         ))}
       </nav>
-      {!collapsed ? (
+      {!collapsed && featureFlags.developmentWorkspace ? (
         <div className="m-2 rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground md:max-lg:hidden">
           <div className="mb-1 flex items-center gap-2 font-medium text-foreground"><LockKeyhole className="size-3.5 text-primary" />Development workspace</div>
           Tenant and branch access are validated by the backend.
@@ -110,9 +110,8 @@ function SidebarLink({ item, collapsed, pathname, onNavigate }: { item: Navigati
   const link = (
     <Link href={item.href} onClick={onNavigate} className={cn("group flex items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors md:max-lg:justify-center", collapsed ? "justify-center" : "justify-between", active ? "bg-primary/10 font-medium text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground")} aria-current={active ? "page" : undefined}>
       <span className="flex min-w-0 items-center gap-2"><item.icon className="size-4 shrink-0" /><span className={cn("truncate md:max-lg:hidden", collapsed && "sr-only")}>{item.label}</span></span>
-      {!collapsed && item.placeholder ? <Badge variant="outline" className="px-1.5 py-0 text-[10px] font-normal md:max-lg:hidden">Soon</Badge> : null}
     </Link>
   );
 
-  return collapsed ? <Tooltip><TooltipTrigger render={link} /><TooltipContent side="right">{item.label}{item.placeholder ? " (development)" : ""}</TooltipContent></Tooltip> : link;
+  return collapsed ? <Tooltip><TooltipTrigger render={link} /><TooltipContent side="right">{item.label}</TooltipContent></Tooltip> : link;
 }

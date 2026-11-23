@@ -1,22 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useRef, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm, useWatch } from "react-hook-form";
-import {
-  ArrowLeft,
-  Building2,
-  CheckCircle2,
-  LoaderCircle,
-  Mail,
-  ShieldCheck,
-} from "lucide-react";
+import { useForm } from "react-hook-form";
+import { ArrowLeft, Building2, CheckCircle2, Mail } from "lucide-react";
 import { getApiErrorMessage, registerAccount } from "@/lib/auth/auth-service";
 import { registerTenant } from "@/lib/api/management-service";
 import {
+  getApiErrorStatus,
   getRegisterIntent,
+  onboardingStatusPath,
   RegistrationStepError,
   submitHospitalRegistration,
   type RegisterIntent,
@@ -24,64 +19,22 @@ import {
   type RegistrationStage,
 } from "@/lib/onboarding/registration-flow";
 import {
-  hospitalRegistrationSchema,
   registrationAccountSchema,
   toHospitalRegistrationPayload,
   toRegisterAccountPayload,
-  type HospitalRegistrationValues,
+  type HospitalProfileValues,
   type RegistrationAccountValues,
 } from "@/lib/validations/onboarding";
 import { useAuthStore } from "@/stores/auth-store";
-import type { TenantMembership } from "@/types/management";
-import { InvitationUnavailable } from "./invitation-unavailable";
+import { HospitalRegistrationWizard } from "@/components/onboarding/hospital-registration-wizard";
+import { InvitationEntry } from "./invitation-entry";
 import { FormField } from "@/components/shared/form-field";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 
-type Step = "choose" | "account" | "hospital" | "success";
+type Step = "choose" | "account" | "hospital";
 type FailedStage = RegistrationStage | null;
-
-const FALLBACK_TIMEZONES = [
-  "UTC",
-  "Asia/Kolkata",
-  "Asia/Dubai",
-  "Asia/Singapore",
-  "Europe/London",
-  "Europe/Berlin",
-  "America/New_York",
-  "America/Chicago",
-  "America/Denver",
-  "America/Los_Angeles",
-  "Australia/Sydney",
-];
-
-function resolvedTimezone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  } catch {
-    return "UTC";
-  }
-}
-
-function supportedTimezones(): string[] {
-  const intl = Intl as unknown as {
-    supportedValuesOf?: (key: string) => string[];
-  };
-
-  try {
-    return intl.supportedValuesOf?.("timeZone") ?? FALLBACK_TIMEZONES;
-  } catch {
-    return FALLBACK_TIMEZONES;
-  }
-}
 
 function stageErrorMessage(stage: RegistrationStage, cause: unknown): string {
   const detail = getApiErrorMessage(cause);
@@ -97,26 +50,22 @@ function stageErrorMessage(stage: RegistrationStage, cause: unknown): string {
 }
 
 export function RegisterFlow() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const signIn = useAuthStore((state) => state.signIn);
-  const signOut = useAuthStore((state) => state.signOut);
+  const submissionLock = useRef(false);
 
   const [intent, setIntent] = useState<RegisterIntent>(() =>
     getRegisterIntent(searchParams.get("intent")),
   );
   const [step, setStep] = useState<Step>("choose");
   const [accountValues, setAccountValues] = useState<RegistrationAccountValues | null>(null);
+  const [hospitalDraft, setHospitalDraft] = useState<Partial<HospitalProfileValues> | null>(null);
   const [progress, setProgress] = useState<Partial<RegistrationProgress>>({});
-  const [tenant, setTenant] = useState<TenantMembership | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [failedStage, setFailedStage] = useState<FailedStage>(null);
-
-  const defaultTimezone = useMemo(() => resolvedTimezone(), []);
-  const timezones = useMemo(
-    () => [...new Set([defaultTimezone, ...supportedTimezones(), "UTC"])].sort(),
-    [defaultTimezone],
-  );
+  const [duplicateSlug, setDuplicateSlug] = useState(false);
 
   const accountForm = useForm<RegistrationAccountValues>({
     resolver: zodResolver(registrationAccountSchema),
@@ -129,36 +78,26 @@ export function RegisterFlow() {
     },
   });
 
-  const hospitalForm = useForm<HospitalRegistrationValues>({
-    resolver: zodResolver(hospitalRegistrationSchema),
-    defaultValues: {
-      name: "",
-      slug: "",
-      legalName: "",
-      email: "",
-      phone: "",
-      timezone: defaultTimezone,
-    },
-  });
-
   const continueToHospital = accountForm.handleSubmit((values) => {
     setAccountValues(values);
     setSubmitError(null);
     setFailedStage(null);
+    setDuplicateSlug(false);
     setStep("hospital");
   });
 
-  const timezone = useWatch({ control: hospitalForm.control, name: "timezone" });
-
-  const submitHospital = hospitalForm.handleSubmit(async (values) => {
+  async function submitHospital(values: HospitalProfileValues) {
     if (!accountValues) {
       setStep("account");
       return;
     }
+    if (submissionLock.current) return;
+    submissionLock.current = true;
 
     setSubmitting(true);
     setSubmitError(null);
     setFailedStage(null);
+    setDuplicateSlug(false);
 
     try {
       const result = await submitHospitalRegistration(
@@ -181,16 +120,21 @@ export function RegisterFlow() {
       );
 
       setProgress(result.progress);
-      setTenant(result.tenant);
-      setStep("success");
-      // The hospital is PENDING and cannot be selected yet. Signing out avoids
-      // leaving a credential-only session that looks like a broken workspace.
-      await signOut().catch(() => undefined);
+      router.replace(onboardingStatusPath({ submitted: true }));
     } catch (error) {
       if (error instanceof RegistrationStepError) {
         setProgress(error.progress);
         setFailedStage(error.stage);
-        setSubmitError(stageErrorMessage(error.stage, error.cause));
+
+        const conflict =
+          error.stage === "hospital" && getApiErrorStatus(error.cause) === 409;
+        setDuplicateSlug(conflict);
+        setSubmitError(
+          conflict
+            ? "That workspace URL is already in use. Choose a different slug and submit again."
+            : stageErrorMessage(error.stage, error.cause),
+        );
+
         // A duplicate/invalid account cannot be fixed from the hospital form.
         // Return to the account step so the user can edit or sign in instead.
         if (error.stage === "account") setStep("account");
@@ -198,75 +142,13 @@ export function RegisterFlow() {
         setSubmitError(getApiErrorMessage(error));
       }
     } finally {
+      submissionLock.current = false;
       setSubmitting(false);
     }
-  });
-
-  const retry = () => {
-    void submitHospital();
-  };
-
-  if (intent === "invitation") {
-    return <InvitationUnavailable hasToken={Boolean(searchParams.get("token"))} />;
   }
 
-  if (step === "success" && tenant) {
-    return (
-      <div className="space-y-6 text-center">
-        <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <CheckCircle2 className="size-6" />
-        </span>
-        <div>
-          <h2 className="text-xl font-semibold tracking-tight">Hospital submitted</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {tenant.tenantName} has been created and is waiting for HospitalOS review.
-          </p>
-        </div>
-
-        <dl className="grid gap-3 rounded-lg border bg-muted/30 p-4 text-left text-sm sm:grid-cols-2">
-          <div>
-            <dt className="text-muted-foreground">Hospital</dt>
-            <dd className="font-medium">{tenant.tenantName}</dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Workspace slug</dt>
-            <dd className="font-medium">{tenant.tenantSlug}</dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Status</dt>
-            <dd className="font-medium">{tenant.tenantStatus}</dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Your role</dt>
-            <dd className="font-medium">Hospital administrator (after activation)</dd>
-          </div>
-        </dl>
-
-        <Alert className="text-left">
-          <ShieldCheck className="size-4 text-primary" />
-          <AlertTitle>What happens next</AlertTitle>
-          <AlertDescription>
-            A HospitalOS administrator must activate the hospital before it can be
-            used. Activation notifications are not available in this build yet.
-            Once it is active, sign in with the same email and password.
-          </AlertDescription>
-        </Alert>
-
-        <p className="text-xs text-muted-foreground">
-          Keep your workspace slug for support. Sign in with the same email and
-          password once the hospital is active.
-        </p>
-
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Button nativeButton={false} render={<Link href="/login" />}>
-            Go to sign in
-          </Button>
-          <Button variant="outline" nativeButton={false} render={<Link href="/" />}>
-            Back to home
-          </Button>
-        </div>
-      </div>
-    );
+  if (intent === "invitation") {
+    return <InvitationEntry token={searchParams.get("token")} />;
   }
 
   if (step === "account") {
@@ -395,147 +277,21 @@ export function RegisterFlow() {
 
   if (step === "hospital") {
     return (
-      <div className="space-y-5">
-        <StepIndicator current={2} />
-        <div>
-          <h2 className="text-lg font-semibold">Hospital details</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            The hospital is created in PENDING status and reviewed by HospitalOS
-            before it becomes available to staff.
-          </p>
-        </div>
-
-        {submitError ? (
-          <Alert variant="destructive" role="alert">
-            <AlertTitle>
-              {failedStage === "hospital"
-                ? "Hospital registration did not complete"
-                : "Registration did not complete"}
-            </AlertTitle>
-            <AlertDescription className="space-y-2">
-              <p>{submitError}</p>
-              {failedStage === "hospital" || failedStage === "sign-in" ? (
-                <p className="text-xs">
-                  Your account already exists. Retrying will not create it again.
-                </p>
-              ) : null}
-              <Button type="button" size="sm" variant="outline" onClick={retry}>
-                {failedStage === "hospital" ? "Retry hospital registration" : "Retry"}
-              </Button>
-            </AlertDescription>
-          </Alert>
-        ) : null}
-
-        <form className="space-y-4" onSubmit={submitHospital} noValidate>
-          <FormField
-            id="hospital-name"
-            label="Hospital name"
-            required
-            error={hospitalForm.formState.errors.name?.message}
-          >
-            <Input
-              id="hospital-name"
-              autoComplete="organization"
-              placeholder="Riverside Care Hospital"
-              {...hospitalForm.register("name")}
-            />
-          </FormField>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FormField
-              id="hospital-slug"
-              label="Workspace slug (optional)"
-              error={hospitalForm.formState.errors.slug?.message}
-            >
-              <Input
-                id="hospital-slug"
-                placeholder="riverside-care"
-                {...hospitalForm.register("slug")}
-              />
-            </FormField>
-            <FormField
-              id="hospital-legal-name"
-              label="Legal name (optional)"
-              error={hospitalForm.formState.errors.legalName?.message}
-            >
-              <Input id="hospital-legal-name" {...hospitalForm.register("legalName")} />
-            </FormField>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Lowercase letters, numbers and hyphens only. Leave blank to generate one
-            from the hospital name.
-          </p>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FormField
-              id="hospital-email"
-              label="Hospital email (optional)"
-              error={hospitalForm.formState.errors.email?.message}
-            >
-              <Input
-                id="hospital-email"
-                type="email"
-                {...hospitalForm.register("email")}
-              />
-            </FormField>
-            <FormField
-              id="hospital-phone"
-              label="Hospital phone (optional)"
-              error={hospitalForm.formState.errors.phone?.message}
-            >
-              <Input id="hospital-phone" type="tel" {...hospitalForm.register("phone")} />
-            </FormField>
-          </div>
-
-          <FormField
-            id="hospital-timezone"
-            label="Timezone"
-            required
-            error={hospitalForm.formState.errors.timezone?.message}
-          >
-            <Select
-              value={timezone}
-              items={timezones.map((timezone) => ({ value: timezone, label: timezone }))}
-              onValueChange={(value) => {
-                if (value) {
-                  hospitalForm.setValue("timezone", value, { shouldValidate: true });
-                }
-              }}
-            >
-              <SelectTrigger id="hospital-timezone" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {timezones.map((timezone) => (
-                  <SelectItem key={timezone} value={timezone}>
-                    {timezone}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FormField>
-
-          <div className="flex flex-col gap-2 sm:flex-row sm:justify-between">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                setStep("account");
-                setSubmitError(null);
-                setFailedStage(null);
-                if (accountValues) accountForm.reset(accountValues);
-              }}
-              disabled={submitting}
-            >
-              <ArrowLeft className="size-4" /> Back
-            </Button>
-            <Button type="submit" disabled={submitting}>
-              {submitting ? <LoaderCircle className="animate-spin" /> : null}
-              {submitting ? "Submitting..." : "Submit hospital registration"}
-            </Button>
-          </div>
-        </form>
-      </div>
+      <HospitalRegistrationWizard
+        initialValues={hospitalDraft ?? undefined}
+        submitting={submitting}
+        error={submitError}
+        duplicateSlug={duplicateSlug}
+        onDraftChange={setHospitalDraft}
+        onBackToAccount={() => {
+          setStep("account");
+          setSubmitError(null);
+          setFailedStage(null);
+          setDuplicateSlug(false);
+          if (accountValues) accountForm.reset(accountValues);
+        }}
+        onSubmit={submitHospital}
+      />
     );
   }
 

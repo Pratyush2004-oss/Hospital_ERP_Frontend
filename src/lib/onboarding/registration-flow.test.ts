@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getRegisterIntent,
   INVITATION_ACCEPTANCE,
+  onboardingStatusPath,
   RegistrationStepError,
   submitHospitalRegistration,
   type RegistrationDependencies,
@@ -59,6 +60,11 @@ describe("hospital registration flow", () => {
     expect(vi.mocked(deps.signIn).mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(deps.registerTenant).mock.invocationCallOrder[0]!,
     );
+  });
+
+  it("sends successful registrations to the onboarding status route", () => {
+    expect(onboardingStatusPath()).toBe("/onboarding/status");
+    expect(onboardingStatusPath({ submitted: true })).toBe("/onboarding/status?submitted=1");
   });
 
   it("reports a duplicate account without signing in or creating a hospital", async () => {
@@ -136,9 +142,10 @@ describe("registration intent and invitation entry", () => {
     expect(getRegisterIntent("something-else")).toBe("hospital");
   });
 
-  it("keeps invitation acceptance explicitly unavailable until backend support exists", () => {
-    expect(INVITATION_ACCEPTANCE.available).toBe(false);
-    expect(INVITATION_ACCEPTANCE.reason).toMatch(/not available/i);
-    expect(INVITATION_ACCEPTANCE.guidance).toMatch(/sign in/i);
+  it("points invitation entry at the dedicated acceptance route", () => {
+    expect(INVITATION_ACCEPTANCE.available).toBe(true);
+    expect(INVITATION_ACCEPTANCE.path).toBe("/accept-invitation");
+    expect(INVITATION_ACCEPTANCE.reason).toMatch(/single-use/i);
+    expect(INVITATION_ACCEPTANCE.guidance).toMatch(/resend/i);
   });
 });

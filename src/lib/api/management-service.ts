@@ -5,7 +5,9 @@ import type {
   BranchListQuery,
   BranchListResponse,
   RegisterTenantInput,
+  SlugAvailability,
   TenantMembership,
+  TenantOnboardingStatus,
   TenantSummary,
   UpdateBranchInput,
 } from "@/types/management";
@@ -16,6 +18,23 @@ export async function listTenantMemberships(): Promise<TenantMembership[]> {
     url: "/tenants/memberships",
   });
   return response.data.memberships;
+}
+
+export async function getTenantOnboardingStatus(): Promise<TenantOnboardingStatus> {
+  const response = await apiRequest<TenantOnboardingStatus>({
+    method: "GET",
+    url: "/tenants/onboarding",
+  });
+  return response.data;
+}
+
+export async function checkTenantSlugAvailability(slug: string): Promise<SlugAvailability> {
+  const response = await apiRequest<SlugAvailability>({
+    method: "GET",
+    url: "/tenants/slug-availability",
+    params: { slug },
+  });
+  return response.data;
 }
 
 export async function selectTenant(slug: string): Promise<void> {
